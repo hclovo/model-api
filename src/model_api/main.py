@@ -30,11 +30,10 @@ async def health():
 
 def main():
     uvicorn.run(
-        "model_api.main:app",
+        app,
         host=settings.host,
         port=settings.port,
         log_level=settings.log_level,
-        reload=False,
     )
 
 
