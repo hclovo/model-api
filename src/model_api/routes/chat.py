@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse
 
 from model_api.dependencies import verify_api_key
 from model_api.providers import get_provider
-from model_api.schemas import ChatRequest, ChatResponse
+from model_api.schemas import ChatRequest, ChatResponse, ErrorDetail, ErrorResponse
 
 router = APIRouter()
 
@@ -13,6 +13,7 @@ router = APIRouter()
 @router.post(
     "/chat/completions",
     response_model=ChatResponse,
+    responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
     dependencies=[Depends(verify_api_key)],
 )
 async def chat_completions(request: ChatRequest):
@@ -25,15 +26,25 @@ async def chat_completions(request: ChatRequest):
     if not request.stream:
         return await provider.chat(request)
 
-    # 流式：SSE 格式
     async def event_stream():
         try:
             async for chunk in provider.chat_stream(request):
-                data = chunk.model_dump_json(exclude_none=False)
-                yield f"data: {data}\n\n"
+                chunk_dict = chunk.model_dump()
+                # delta 只输出有值的字段：role 仅在第一个 chunk 出现，
+                # content 为 None 时不输出（符合 OpenAI SSE 规范）
+                for c in chunk_dict.get("choices", []):
+                    c["delta"] = {k: v for k, v in c["delta"].items() if v is not None}
+                yield f"data: {json.dumps(chunk_dict, ensure_ascii=False)}\n\n"
         except Exception as e:
-            error = json.dumps({"error": {"message": str(e), "type": "server_error"}})
-            yield f"data: {error}\n\n"
+            err = ErrorResponse(error=ErrorDetail(message=str(e)))
+            yield f"data: {err.model_dump_json()}\n\n"
         yield "data: [DONE]\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # 禁用 Nginx 缓冲，保证流式实时输出
+        },
+    )

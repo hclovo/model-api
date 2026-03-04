@@ -1,80 +1,17 @@
 /**
- * Cloudflare Worker — 多 API 反向代理
+ * 此文件已废弃。
  *
- * 路由规则：
- *   /google/*  → https://generativelanguage.googleapis.com/*
- *   /openai/*  → https://api.openai.com/*
+ * 原方案使用 Cloudflare Worker 做反向代理，现已升级为直接使用
+ * Cloudflare AI Gateway（/compat 端点），统一接入多个 LLM 提供商。
  *
- * 部署步骤：
- *   1. 登录 Cloudflare Dashboard → Workers & Pages → Create Worker
- *   2. 将本文件内容粘贴进去，保存并部署
- *   3. 将 Worker URL 填入 .env 的 CLOUDFLARE_PROXY_URL
+ * 配置方式：
+ *   1. 登录 Cloudflare Dashboard → AI Gateway → Create Gateway
+ *   2. 复制 /compat 端点 URL
+ *   3. 将 URL 填入 .env 的 CF_AIG_BASE_URL
+ *   4. 在 AI Gateway → API Tokens 创建 Token，填入 CF_AIG_TOKEN
  *
- * 可选：绑定自定义域名以获得更稳定的访问地址。
+ * 支持的模型前缀（在模型名前加 provider/ 即可路由）：
+ *   google-ai-studio/gemini-*
+ *   openai/gpt-*
+ *   anthropic/claude-*
  */
-
-const UPSTREAM_MAP = {
-  "/google": "https://generativelanguage.googleapis.com",
-  "/openai": "https://api.openai.com",
-};
-
-export default {
-  async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    const pathname = url.pathname;
-
-    // 找到匹配的前缀
-    let upstreamBase = null;
-    let stripPrefix = "";
-    for (const [prefix, upstream] of Object.entries(UPSTREAM_MAP)) {
-      if (pathname.startsWith(prefix)) {
-        upstreamBase = upstream;
-        stripPrefix = prefix;
-        break;
-      }
-    }
-
-    if (!upstreamBase) {
-      return new Response(
-        JSON.stringify({ error: "Unknown proxy path: " + pathname }),
-        { status: 404, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    // 重写 URL：去掉前缀，拼接到上游地址
-    const upstreamPath = pathname.slice(stripPrefix.length) || "/";
-    const upstreamUrl = new URL(upstreamPath + url.search, upstreamBase);
-
-    // 克隆请求头，移除 Host 避免上游拒绝
-    const headers = new Headers(request.headers);
-    headers.delete("host");
-
-    const upstreamRequest = new Request(upstreamUrl.toString(), {
-      method: request.method,
-      headers,
-      body: request.body,
-      redirect: "follow",
-    });
-
-    try {
-      const response = await fetch(upstreamRequest);
-
-      // 将上游响应透传，并加上 CORS 头
-      const responseHeaders = new Headers(response.headers);
-      responseHeaders.set("Access-Control-Allow-Origin", "*");
-      responseHeaders.set("Access-Control-Allow-Methods", "*");
-      responseHeaders.set("Access-Control-Allow-Headers", "*");
-
-      return new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: responseHeaders,
-      });
-    } catch (err) {
-      return new Response(
-        JSON.stringify({ error: "Upstream fetch failed", detail: String(err) }),
-        { status: 502, headers: { "Content-Type": "application/json" } }
-      );
-    }
-  },
-};
