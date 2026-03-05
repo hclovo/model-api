@@ -31,6 +31,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/model_api"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
