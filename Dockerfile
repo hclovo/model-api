@@ -7,7 +7,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
 
 # 优先复制依赖描述文件，利用 Docker 缓存
-COPY pyproject.toml uv.lock* ./
+COPY pyproject.toml uv.lock* README.md ./
 
 # 安装生产依赖到独立目录，不安装 dev 依赖
 RUN uv sync --frozen --no-dev --no-install-project
